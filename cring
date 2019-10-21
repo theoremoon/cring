@@ -1,3 +1,6 @@
+#!/usr/bin/python3
+# vim set ft=python
+
 import gi
 
 gi.require_version("Gtk", "3.0")
@@ -111,12 +114,14 @@ def on_release(k):
         is_pressing_super = False
 
 
-primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
-clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
-clipboard.connect("owner-change", on_copy)
+def main():
+    global primary, clipboard
 
+    primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
+    clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+    clipboard.connect("owner-change", on_copy)
 
-listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-listener.start()
+    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+    listener.start()
 
-Gtk.main()
+    Gtk.main()
