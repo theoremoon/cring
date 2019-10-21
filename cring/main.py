@@ -1,0 +1,122 @@
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk, GLib
+from pynput import keyboard
+from pynput.keyboard import KeyCode, Key
+
+import subprocess
+
+trigger = KeyCode.from_char("v")
+modifier = Key.cmd
+
+LOG_MAX = 20
+
+clipboard_log = []
+is_pressing_super = False
+is_pressing_v = False
+dialog = None
+clipboard_index = None
+clipboard = None
+primary = None
+paste_request = False
+
+
+def set_dialog_content():
+    if dialog is None:
+        return
+
+    listbox = dialog.get_content_area()
+    for child in listbox.get_children():
+        listbox.remove(child)
+    for i, s in enumerate(reversed(clipboard_log)):
+        label = Gtk.Label()
+        if i == clipboard_index:
+            label.set_markup("<b>{}</b>".format(s))
+        else:
+            label.set_text(s)
+        listbox.add(label)
+    dialog.show_all()
+
+
+def create_dialog():
+    global dialog, clipboard_index
+
+    clipboard_index = 0
+    dialog = Gtk.Dialog()
+    set_dialog_content()
+
+    def dialog_callback(*args):
+        global dialog, clipboard_index
+        clipboard_index = None
+        dialog = None
+
+    dialog.connect("close", dialog_callback)
+
+
+def update_dialog():
+    global dialog, clipboard_index
+    if len(clipboard_log) == 0:
+        return
+
+    if dialog:
+        clipboard_index = (clipboard_index + 1) % len(clipboard_log)
+        set_dialog_content()
+        return
+
+    create_dialog()
+
+
+def on_copy(*args):
+    global clipboard_log, paste_request
+    clipboard = args[0]
+    if clipboard.wait_is_text_available():
+        content = clipboard.wait_for_text()
+        try:
+            index = clipboard_log.index(content)
+            clipboard_log.pop(index)
+        except ValueError:
+            pass
+        clipboard_log.append(content)
+        if len(clipboard_log) > LOG_MAX:
+            clipboard_log = clipboard_log[-LOG_MAX:]
+        print(clipboard_log)
+
+        if paste_request:
+            subprocess.run(["xdotool", "key", "shift+Insert"])
+            paste_request = False
+
+
+def on_press(k):
+    global is_pressing_super, is_pressing_v
+    if is_pressing_super and (not is_pressing_v) and k == trigger:
+        is_pressing_v = True
+        GLib.idle_add(update_dialog)
+    if k == modifier:
+        is_pressing_super = True
+
+
+def on_release(k):
+    global is_pressing_super, is_pressing_v, dialog, paste_request
+    if k == trigger:
+        is_pressing_v = False
+    if k == modifier:
+        if dialog:
+            dialog.close()
+            dialog = None
+            paste_request = True
+            clipboard.set_text(clipboard_log[-clipboard_index - 1], -1)
+            primary.set_text(clipboard_log[-clipboard_index - 1], -1)
+
+        is_pressing_super = False
+
+
+primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
+clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+clipboard.connect("owner-change", on_copy)
+
+
+listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+listener.start()
+
+Gtk.main()
